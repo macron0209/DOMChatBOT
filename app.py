@@ -15,6 +15,7 @@ client = discord.Client(intents=intents)
 
 app = Flask(__name__)
 
+# JSON読み書き
 def load_events():
     with open("events.json", "r", encoding="utf-8") as f:
         return json.load(f)
@@ -23,6 +24,7 @@ def save_events(events):
     with open("events.json", "w", encoding="utf-8") as f:
         json.dump(events, f, ensure_ascii=False, indent=2)
 
+# 質問の正規化
 def normalize(text):
     text = text.lower()
     text = re.sub(r"[！？!?.]", "", text)
@@ -55,6 +57,7 @@ def is_active(event):
     end = datetime.strptime(event["end"], "%Y-%m-%d")
     return start <= now <= end
 
+# Discord Bot
 @client.event
 async def on_message(message):
     if message.author.bot:
@@ -100,7 +103,7 @@ async def on_message(message):
     ]
     await message.channel.send(random.choice(templates))
 
-# --- 管理画面 ---
+# Flask 管理画面
 @app.route("/")
 def admin():
     events = load_events()
@@ -121,10 +124,10 @@ def add_event():
     save_events(events)
     return redirect("/")
 
+# Flaskをバックグラウンドで起動
 def run_flask():
-    port = int(os.environ.get("PORT", 10000))  # Renderが自動で割り当てるポート
+    port = int(os.environ.get("PORT", 10000))  # Renderの割り当てポート
     app.run(host="0.0.0.0", port=port)
 
 threading.Thread(target=run_flask).start()
-
 client.run(TOKEN)
