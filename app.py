@@ -3,9 +3,10 @@ import json
 import os
 import re
 import random
-from flask import Flask, request, redirect, render_template_string
+from flask import Flask, request, redirect, render_template_string, send_file
 from datetime import datetime
 import threading
+from io import BytesIO
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 
@@ -137,6 +138,7 @@ def admin():
     </head>
     <body>
         <h1>イベント管理画面</h1>
+        <a href="/export"><button>events.json をエクスポート</button></a>
         <h2>イベント一覧 (開始日順)</h2>
         <table>
             <tr>
@@ -228,6 +230,14 @@ def delete_event():
     events = [e for e in events if e["name"] != name]
     save_events()
     return redirect("/")
+
+# --- 新規ルート: events.json をエクスポート ---
+@app.route("/export")
+def export_events():
+    output = BytesIO()
+    output.write(json.dumps(events, ensure_ascii=False, indent=2).encode("utf-8"))
+    output.seek(0)
+    return send_file(output, mimetype="application/json", as_attachment=True, download_name="events.json")
 
 # --- Flaskバックグラウンド起動 ---
 def run_flask():
