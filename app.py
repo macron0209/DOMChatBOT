@@ -15,14 +15,24 @@ client = discord.Client(intents=intents)
 
 app = Flask(__name__)
 
+# --- グローバル変数でイベント管理 ---
+events = []
+
 # --- JSON読み書き ---
 def load_events():
+    global events
     if not os.path.exists("events.json"):
-        return []
-    with open("events.json", "r", encoding="utf-8") as f:
-        return json.load(f)
+        events = []
+    else:
+        try:
+            with open("events.json", "r", encoding="utf-8") as f:
+                events = json.load(f)
+        except json.decoder.JSONDecodeError:
+            events = []
+    return events
 
-def save_events(events):
+def save_events():
+    global events
     with open("events.json", "w", encoding="utf-8") as f:
         json.dump(events, f, ensure_ascii=False, indent=2)
 
@@ -32,7 +42,8 @@ def normalize(text):
     text = re.sub(r"[！？!?.]", "", text)
     return text
 
-def find_event(question, events):
+def find_event(question):
+    global events
     for event in events:
         for alias in event["aliases"]:
             if alias.lower() in question:
@@ -66,7 +77,6 @@ async def on_message(message):
         return
 
     question = normalize(message.content)
-    events = load_events()
 
     if "今やってる" in question:
         active_events = [e["name"] for e in events if is_active(e)]
@@ -76,7 +86,7 @@ async def on_message(message):
             await message.channel.send("現在開催中のイベントはありません。")
         return
 
-    event = find_event(question, events)
+    event = find_event(question)
     if not event:
         return
 
@@ -108,7 +118,7 @@ async def on_message(message):
 # --- Flask 管理画面 ---
 @app.route("/")
 def admin():
-    events = sorted(load_events(), key=lambda e: e["start"])
+    sorted_events = sorted(events, key=lambda e: e["start"])
     html = """
     <html>
     <head>
@@ -147,10 +157,10 @@ def admin():
 
         <h2>イベント追加</h2>
         <form action="/add" method="post">
-            名前:<br><input name="name"><br>
-            エイリアス(カンマ区切り):<br><input name="aliases"><br>
-            開始日(YYYY-MM-DD):<br><input name="start"><br>
-            終了日(YYYY-MM-DD):<br><input name="end"><br>
+            名前:<br><input name="name" required><br>
+            エイリアス(カンマ区切り):<br><input name="aliases" required><br>
+            開始日(YYYY-MM-DD):<br><input name="start" required pattern="\\d{4}-\\d{2}-\\d{2}"><br>
+            終了日(YYYY-MM-DD):<br><input name="end" required pattern="\\d{4}-\\d{2}-\\d{2}"><br>
             内容:<br><input name="content"><br>
             報酬:<br><input name="reward"><br>
             <button type="submit">追加</button>
@@ -158,28 +168,25 @@ def admin():
     </body>
     </html>
     """
-    return render_template_string(html, events=events)
+    return render_template_string(html, events=sorted_events)
 
 @app.route("/add", methods=["POST"])
 def add_event():
-    events = load_events()
     new_event = {
         "name": request.form["name"],
         "aliases": request.form["aliases"].split(","),
         "start": request.form["start"],
         "end": request.form["end"],
-        "content": request.form["content"],
-        "reward": request.form["reward"]
+        "content": request.form.get("content", ""),
+        "reward": request.form.get("reward", "")
     }
     events.append(new_event)
-    save_events(events)
+    save_events()
     return redirect("/")
 
-# 編集フォーム
 @app.route("/edit_form")
 def edit_form():
     name = request.args.get("name")
-    events = load_events()
     event = next((e for e in events if e["name"] == name), None)
     if not event:
         return redirect("/")
@@ -187,10 +194,10 @@ def edit_form():
     <h1>イベント編集: {{event.name}}</h1>
     <form action="/edit" method="post">
         <input type="hidden" name="original_name" value="{{event.name}}">
-        名前:<br><input name="name" value="{{event.name}}"><br>
-        エイリアス(カンマ区切り):<br><input name="aliases" value="{{','.join(event.aliases)}}"><br>
-        開始日(YYYY-MM-DD):<br><input name="start" value="{{event.start}}"><br>
-        終了日(YYYY-MM-DD):<br><input name="end" value="{{event.end}}"><br>
+        名前:<br><input name="name" value="{{event.name}}" required><br>
+        エイリアス(カンマ区切り):<br><input name="aliases" value="{{','.join(event.aliases)}}" required><br>
+        開始日(YYYY-MM-DD):<br><input name="start" value="{{event.start}}" required pattern="\\d{4}-\\d{2}-\\d{2}"><br>
+        終了日(YYYY-MM-DD):<br><input name="end" value="{{event.end}}" required pattern="\\d{4}-\\d{2}-\\d{2}"><br>
         内容:<br><input name="content" value="{{event.content}}"><br>
         報酬:<br><input name="reward" value="{{event.reward}}"><br>
         <button type="submit">保存</button>
@@ -202,30 +209,30 @@ def edit_form():
 @app.route("/edit", methods=["POST"])
 def edit_event():
     original_name = request.form["original_name"]
-    events = load_events()
     for e in events:
         if e["name"] == original_name:
             e["name"] = request.form["name"]
             e["aliases"] = request.form["aliases"].split(",")
             e["start"] = request.form["start"]
             e["end"] = request.form["end"]
-            e["content"] = request.form["content"]
-            e["reward"] = request.form["reward"]
+            e["content"] = request.form.get("content", "")
+            e["reward"] = request.form.get("reward", "")
             break
-    save_events(events)
+    save_events()
     return redirect("/")
 
 @app.route("/delete")
 def delete_event():
     name = request.args.get("name")
-    events = load_events()
+    global events
     events = [e for e in events if e["name"] != name]
-    save_events(events)
+    save_events()
     return redirect("/")
 
 # --- Flaskバックグラウンド起動 ---
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
+    load_events()
     app.run(host="0.0.0.0", port=port)
 
 threading.Thread(target=run_flask).start()
