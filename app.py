@@ -122,7 +122,9 @@ def add_event():
     return redirect("/")
 
 def run_flask():
-    app.run(host="0.0.0.0", port=10000)
+    port = int(os.environ.get("PORT", 10000))  # Renderが自動で割り当てるポート
+    app.run(host="0.0.0.0", port=port)
 
 threading.Thread(target=run_flask).start()
+
 client.run(TOKEN)
